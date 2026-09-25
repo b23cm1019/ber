@@ -1,0 +1,16 @@
+numpy
+pandas
+polars
+pyarrow
+sentence-transformers
+faiss-cpu
+lightgbm
+rapidfuzz
+jellyfish
+Metaphone
+scikit-learn
+pyyaml
+tqdm
+unidecode
+joblib
+duckdb

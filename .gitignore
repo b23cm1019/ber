@@ -1,0 +1,9 @@
+data/
+models/
+notebooks/
+outputs/
+*.parquet
+*.npy
+*.faiss
+*.duckdb
+test.py
