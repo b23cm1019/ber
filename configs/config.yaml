@@ -16,6 +16,8 @@ paths:
   labeled_pairs: data/candidates/labeled_pairs.parquet
   feature_dir: data/features/train
   entity_store: data/entity_store.duckdb
+  inference_dir: data/inference
+  submission_path: submissions/submission.tsv
   model_dir: models/lgbm
 
 retrieval:

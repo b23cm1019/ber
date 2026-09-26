@@ -64,6 +64,7 @@ def build_embeddings(
     try:
         for batch_df, batch_vectors in _batches_with_first(first_df, first_vectors, batches, model, batch_size, device):
             end = offset + len(batch_df)
+            print(f"Encoded {end:,}/{total_rows:,} rows for {source_name}", flush=True)
             vectors[offset:end] = batch_vectors
             batch_ids = batch_df["entity_id"].to_numpy()
             if any(len(value) > 32 for value in batch_ids):

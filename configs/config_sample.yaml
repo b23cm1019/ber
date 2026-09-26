@@ -24,6 +24,8 @@ paths:
   feature_dir: data/sample_features/train
 
   entity_store: data/sample_entity_store.duckdb
+  inference_dir: data/sample_inference
+  submission_path: submissions/submission.tsv
 
   model_dir: models/sample_lgbm
 

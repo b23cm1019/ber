@@ -1,7 +1,11 @@
 data/
+scripts/
 models/
 notebooks/
 outputs/
+configs/config_sample.yaml
+configs/config_cluster.yaml
+requirements-cluster-constraints.txt
 *.parquet
 *.npy
 *.faiss

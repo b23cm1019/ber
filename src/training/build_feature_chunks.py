@@ -120,6 +120,7 @@ def build_feature_chunks(
     try:
         reader = pq.ParquetFile(labeled_pairs_path)
         for part, batch in enumerate(reader.iter_batches(batch_size=chunk_size)):
+            print(f"Feature chunk {part + 1}: {batch.num_rows} candidate pairs", flush=True)
             con.register("pair_batch", batch)
             label_column = "p.label" if has_labels else "CAST(0 AS TINYINT)"
             joined = pl.from_arrow(con.execute("""
@@ -136,6 +137,7 @@ def build_feature_chunks(
             """ % label_column).to_arrow_table())
             con.unregister("pair_batch")
             _feature_frame(joined, embeddings).write_parquet(output_dir / f"part-{part:06d}.parquet", compression="zstd")
+            print(f"Wrote feature chunk {part + 1}.", flush=True)
     finally:
         con.close()
     return output_dir

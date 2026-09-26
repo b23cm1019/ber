@@ -18,7 +18,7 @@ from src.training.train_lgbm import load_training_data, train_model
 from src.training.optimize_threshold import optimize_threshold, save_threshold
 from src.utils.paths import project_path
 from src.validation.check_pipeline import validate_pipeline
-from src.inference.score_predictions import run_inference
+from src.inference.run_inference import run_inference
 from src.inference.generate_submission import generate_submission
 
 
@@ -29,20 +29,25 @@ def _paths(cfg):
 def convert_all(cfg):
     paths = _paths(cfg)
     for name in ("source1", "source2", "source3"):
+        print(f"Converting training {name}...", flush=True)
         convert_tsv(paths[f"train_{name}"], paths["parquet_dir"] / f"{name}.parquet")
+        print(f"Finished training {name} conversion.", flush=True)
 
 def convert_test(cfg):
     paths = _paths(cfg)
 
     for name in ("source1", "source2", "source3"):
+        print(f"Converting test {name}...", flush=True)
         convert_tsv(
             paths[f"test_{name}"],
             paths["parquet_dir"] / f"test_{name}.parquet"
         )
+        print(f"Finished test {name} conversion.", flush=True)
 
 def embed_all(cfg, device=None):
     paths, retrieval = _paths(cfg), cfg["retrieval"]
     for name in ("source1", "source2", "source3"):
+        print(f"Embedding {name}...", flush=True)
         build_embeddings(
             paths["parquet_dir"] / f"{name}.parquet", paths["embedding_dir"], name,
             retrieval["model_name"], retrieval["batch_size"], device,
@@ -52,6 +57,7 @@ def embed_test(cfg, device=None):
     paths, retrieval = _paths(cfg), cfg["retrieval"]
 
     for name in ("source1", "source2", "source3"):
+        print(f"Embedding test_{name}...", flush=True)
         build_embeddings(
             paths["parquet_dir"] / f"test_{name}.parquet",
             paths["embedding_dir"],
@@ -65,6 +71,7 @@ def embed_test(cfg, device=None):
 def index_targets(cfg):
     paths, retrieval = _paths(cfg), cfg["retrieval"]
     for name in ("source2", "source3"):
+        print(f"Building FAISS index for {name}...", flush=True)
         build_index(
             paths["embedding_dir"] / f"{name}.npy", paths["index_dir"] / f"{name}.index",
             retrieval["hnsw_m"], retrieval["ef_construction"],
@@ -99,6 +106,7 @@ def index_test(cfg):
 
 def retrieve_train(cfg):
     paths, retrieval = _paths(cfg), cfg["retrieval"]
+    print("Retrieving FAISS candidates...", flush=True)
     retrieve_candidates(
         paths["embedding_dir"] / "source1.npy", paths["embedding_dir"] / "source1_ids.npy",
         [
@@ -107,6 +115,7 @@ def retrieve_train(cfg):
         ],
         paths["faiss_candidate_pairs"], retrieval["top_k"], retrieval["query_batch_size"], retrieval["ef_search"],
     )
+    print("Retrieving phonetic candidates...", flush=True)
     retrieve_phonetic_candidates(
         paths["parquet_dir"] / "source1.parquet", paths["phonetic_index"],
         paths["phonetic_candidate_pairs"], retrieval["phonetic_per_query_limit"],
@@ -118,14 +127,17 @@ def retrieve_train(cfg):
 
 def label_and_feature(cfg):
     paths, training = _paths(cfg), cfg["training"]
+    print("Generating labeled candidate pairs...", flush=True)
     generate_training_pairs(
         paths["candidate_pairs"], paths["train_gt"], paths["labeled_pairs"],
         training["hard_negatives_per_positive"],
     )
+    print("Building entity lookup store...", flush=True)
     build_entity_store(
         paths["parquet_dir"] / "source1.parquet", paths["parquet_dir"] / "source2.parquet",
         paths["parquet_dir"] / "source3.parquet", paths["entity_store"],
     )
+    print("Building reranker feature chunks...", flush=True)
     build_feature_chunks(
         paths["labeled_pairs"], paths["entity_store"], paths["feature_dir"], training["feature_chunk_size"],
         embedding_paths={
@@ -138,6 +150,7 @@ def label_and_feature(cfg):
 
 def train(cfg):
     paths, training = _paths(cfg), cfg["training"]
+    print("Loading feature chunks and training LightGBM...", flush=True)
     frame = load_training_data(
         paths["feature_dir"], training["max_training_rows"],
         training["negative_to_positive_ratio"], training["random_state"],
@@ -171,7 +184,7 @@ def infer(cfg):
         model_path=paths["model_dir"] / "model.pkl",
         threshold_path=paths["model_dir"] / "threshold.json",
 
-        work_dir=project_path("data/inference"),
+        work_dir=paths["inference_dir"],
 
         top_k=retrieval["top_k"],
         query_batch_size=retrieval["query_batch_size"],
@@ -181,9 +194,7 @@ def infer(cfg):
         phonetic_per_query_limit=retrieval["phonetic_per_query_limit"],
     )
 
-    submission_path = project_path(
-        "submissions/submission.tsv"
-    )
+    submission_path = paths["submission_path"]
 
     generate_submission(
         paths["parquet_dir"] / "test_source1.parquet",
