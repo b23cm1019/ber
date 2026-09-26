@@ -11,3 +11,4 @@ requirements-cluster-constraints.txt
 *.faiss
 *.duckdb
 test.py
+__pycache__/
