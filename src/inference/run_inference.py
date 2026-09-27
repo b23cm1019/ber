@@ -12,6 +12,7 @@ from src.training.build_feature_chunks import FEATURE_COLUMNS
 from src.training.build_feature_chunks import build_entity_store, build_feature_chunks
 from src.retrieval.retrieve_candidates import retrieve_candidates
 from src.retrieval.phonetic_blocker import retrieve_phonetic_candidates, union_candidate_files
+from src.retrieval.address_blocker import retrieve_address_candidates
 
 
 def score_feature_chunks(feature_dir, model_path, threshold_path, output_path, batch_size=100_000):
@@ -45,6 +46,7 @@ def run_inference(
     source2_index, source2_ids, source3_index, source3_ids,
     model_path, threshold_path, work_dir, top_k=50, query_batch_size=4096, ef_search=128,
     phonetic_index=None, phonetic_per_query_limit=20,
+    address_index=None, address_per_query_limit=20,
 ):
     """Run retrieval, chunked feature generation, and scoring for a test source."""
     work_dir = Path(work_dir)
@@ -52,6 +54,7 @@ def run_inference(
     candidates = work_dir / "candidate_pairs.parquet"
     faiss_candidates = work_dir / "faiss_candidate_pairs.parquet"
     phonetic_candidates = work_dir / "phonetic_candidate_pairs.parquet"
+    address_candidates = work_dir / "address_candidate_pairs.parquet"
     entity_store = work_dir / "entity_store.duckdb"
     features = work_dir / "features"
     predictions = work_dir / "predictions.parquet"
@@ -62,7 +65,9 @@ def run_inference(
     )
     phonetic_index = Path(phonetic_index) if phonetic_index else Path(source2_index).parent / "phonetic_blocks.duckdb"
     retrieve_phonetic_candidates(source1_parquet, phonetic_index, phonetic_candidates, phonetic_per_query_limit)
-    union_candidate_files([faiss_candidates, phonetic_candidates], candidates)
+    address_index = Path(address_index) if address_index else Path(source2_index).parent / "address_blocks.duckdb"
+    retrieve_address_candidates(source1_parquet, address_index, address_candidates, address_per_query_limit)
+    union_candidate_files([faiss_candidates, phonetic_candidates, address_candidates], candidates)
     build_entity_store(source1_parquet, source2_parquet, source3_parquet, entity_store, rebuild=True)
     build_feature_chunks(
         candidates, entity_store, features, has_labels=False,
@@ -92,6 +97,8 @@ def main():
     run.add_argument("--ef-search", type=int, default=128)
     run.add_argument("--phonetic-index", default=None, help="Defaults to phonetic_blocks.duckdb beside Source2's FAISS index")
     run.add_argument("--phonetic-per-query-limit", type=int, default=20)
+    run.add_argument("--address-index", default=None, help="Defaults to address_blocks.duckdb beside Source2's FAISS index")
+    run.add_argument("--address-per-query-limit", type=int, default=20)
     args = parser.parse_args()
     if args.command == "score":
         score_feature_chunks(args.feature_dir, args.model_path, args.threshold_path, args.output_path)

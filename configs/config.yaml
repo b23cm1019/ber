@@ -10,9 +10,11 @@ paths:
   embedding_dir: data/embeddings
   index_dir: data/indexes
   phonetic_index: data/indexes/phonetic_blocks.duckdb
+  address_index: data/indexes/address_blocks.duckdb
   candidate_pairs: data/candidates/candidate_pairs.parquet
   faiss_candidate_pairs: data/candidates/faiss_candidate_pairs.parquet
   phonetic_candidate_pairs: data/candidates/phonetic_candidate_pairs.parquet
+  address_candidate_pairs: data/candidates/address_candidate_pairs.parquet
   labeled_pairs: data/candidates/labeled_pairs.parquet
   feature_dir: data/features/train
   entity_store: data/entity_store.duckdb
@@ -22,21 +24,22 @@ paths:
 
 retrieval:
   model_name: sentence-transformers/all-MiniLM-L6-v2
-  batch_size: 512
+  batch_size: 1024                # was 512 — better GPU utilization for MiniLM
   query_batch_size: 4096
-  top_k: 50
-  hnsw_m: 32
-  ef_construction: 200
-  ef_search: 128
+  top_k: 20
+  hnsw_m: 16                      # was 32 — faster indexing, adequate for experimentation
+  ef_construction: 100             # was 200 — halved for speed
+  ef_search: 64                   # was 128 — halved for speed
   phonetic_per_query_limit: 20
+  address_per_query_limit: 20
 
 training:
   random_state: 42
   test_size: 0.2
-  feature_chunk_size: 100000
+  feature_chunk_size: 500000       # was 100000 — reduces chunk overhead significantly
   max_training_rows: 5000000
   negative_to_positive_ratio: 10
-  hard_negatives_per_positive: 5
+  hard_negatives_per_positive: 15
 
 model:
   num_leaves: 64

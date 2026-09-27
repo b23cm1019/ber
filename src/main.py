@@ -12,6 +12,7 @@ from src.retrieval.build_embeddings import build_embeddings
 from src.retrieval.build_faiss_index import build_index
 from src.retrieval.retrieve_candidates import retrieve_candidates
 from src.retrieval.phonetic_blocker import build_phonetic_index, retrieve_phonetic_candidates, union_candidate_files
+from src.retrieval.address_blocker import build_address_block_index, retrieve_address_candidates
 from src.training.generate_training_pairs import generate_training_pairs
 from src.training.build_feature_chunks import build_entity_store, build_feature_chunks
 from src.training.train_lgbm import load_training_data, train_model
@@ -83,6 +84,13 @@ def index_targets(cfg):
         ],
         paths["phonetic_index"],
     )
+    build_address_block_index(
+        [
+            ("source2", paths["parquet_dir"] / "source2.parquet"),
+            ("source3", paths["parquet_dir"] / "source3.parquet"),
+        ],
+        paths["address_index"],
+    )
 
 def index_test(cfg):
     paths, retrieval = _paths(cfg), cfg["retrieval"]
@@ -102,6 +110,13 @@ def index_test(cfg):
         ],
         paths["index_dir"] / "test_phonetic_blocks.duckdb",
     )
+    build_address_block_index(
+        [
+            ("source2", paths["parquet_dir"] / "test_source2.parquet"),
+            ("source3", paths["parquet_dir"] / "test_source3.parquet"),
+        ],
+        paths["index_dir"] / "test_address_blocks.duckdb",
+    )
 
 
 def retrieve_train(cfg):
@@ -120,8 +135,14 @@ def retrieve_train(cfg):
         paths["parquet_dir"] / "source1.parquet", paths["phonetic_index"],
         paths["phonetic_candidate_pairs"], retrieval["phonetic_per_query_limit"],
     )
+    print("Retrieving address-overlap candidates...", flush=True)
+    retrieve_address_candidates(
+        paths["parquet_dir"] / "source1.parquet", paths["address_index"],
+        paths["address_candidate_pairs"], retrieval["address_per_query_limit"],
+    )
     union_candidate_files(
-        [paths["faiss_candidate_pairs"], paths["phonetic_candidate_pairs"]], paths["candidate_pairs"]
+        [paths["faiss_candidate_pairs"], paths["phonetic_candidate_pairs"], paths["address_candidate_pairs"]],
+        paths["candidate_pairs"],
     )
 
 
@@ -192,6 +213,9 @@ def infer(cfg):
 
         phonetic_index=paths["index_dir"] / "test_phonetic_blocks.duckdb",
         phonetic_per_query_limit=retrieval["phonetic_per_query_limit"],
+
+        address_index=paths["index_dir"] / "test_address_blocks.duckdb",
+        address_per_query_limit=retrieval["address_per_query_limit"],
     )
 
     submission_path = paths["submission_path"]
@@ -212,9 +236,10 @@ def all_infer(cfg,device=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["convert", "convert-test", "embed", "embed-test", "index", "index-test", "retrieve", "evaluate-retrieval", "label-features", "train", "validate", "infer", "all-train", "all-infer"])
+    parser.add_argument("command", choices=["convert", "convert-test", "embed", "embed-test", "index", "index-test", "retrieve", "evaluate-retrieval", "audit-misses", "label-features", "train", "validate", "infer", "all-train", "all-infer"])
     parser.add_argument("--config", default="configs/config.yaml")
     parser.add_argument("--device", default=None, help="Embedding device, e.g. cuda")
+    parser.add_argument("--sample-size", type=int, default=1000, help="audit-misses: number of missed GT pairs to sample")
     args = parser.parse_args()
     with project_path(args.config).open(encoding="utf-8") as file:
         cfg = yaml.safe_load(file)
@@ -236,6 +261,16 @@ def main():
         from src.evaluation.evaluate_retrieval import evaluate_retrieval, print_retrieval_report
         paths = _paths(cfg)
         print_retrieval_report(evaluate_retrieval(paths["candidate_pairs"], paths["train_gt"]))
+    elif args.command == "audit-misses":
+        from src.evaluation.audit_misses import audit_misses
+        paths = _paths(cfg)
+        audit_misses(
+            paths["candidate_pairs"], paths["train_gt"],
+            paths["parquet_dir"] / "source1.parquet",
+            paths["parquet_dir"] / "source2.parquet",
+            paths["parquet_dir"] / "source3.parquet",
+            args.sample_size,
+        )
     elif args.command == "label-features":
         label_and_feature(cfg)
     elif args.command == "train":

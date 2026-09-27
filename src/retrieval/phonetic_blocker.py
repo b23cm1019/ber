@@ -86,14 +86,22 @@ def retrieve_phonetic_candidates(
                            q.s1_embedding_row, b.candidate_embedding_row,
                            row_number() OVER (
                                PARTITION BY q.s1_id
-                               ORDER BY b.candidate_source, b.candidate_embedding_row
+                               ORDER BY
+                                   -- numeric-token agreement is now a soft signal used only
+                                   -- to rank within the per-query cap, never a hard filter,
+                                   -- so a missing/mismatched house number no longer drops a
+                                   -- true match that otherwise shares the phonetic key.
+                                   CASE
+                                       WHEN q.first_numeric_token <> ''
+                                        AND b.first_numeric_token = q.first_numeric_token
+                                       THEN 0 ELSE 1
+                                   END,
+                                   b.candidate_source, b.candidate_embedding_row
                            ) AS block_rank
                     FROM query_batch q
                     INNER JOIN phonetic_blocks b
                       ON q.phonetic_key <> ''
                      AND b.phonetic_key = q.phonetic_key
-                     AND q.first_numeric_token <> ''
-                     AND b.first_numeric_token = q.first_numeric_token
                      AND (q.country = '' OR b.country = q.country)
                 )
                 WHERE block_rank <= ?

@@ -15,6 +15,16 @@ FEATURE_COLUMNS = [
     "name_ratio", "name_token_sort", "name_token_set", "name_jaro",
     "addr_ratio", "addr_token_sort", "numeric_jaccard", "country_match",
     "legal_match", "embedding_cosine",
+    # Containment/overlap coefficient (len(intersection)/min(len(A),len(B))),
+    # unlike Jaccard this stays high when one side is a short name/address that is a
+    # near-subset of a longer one, e.g. "ABC Technologies" vs "ABC Technologies Pvt Ltd Mumbai".
+    "name_overlap_coef", "addr_overlap_coef",
+    # Character-trigram Jaccard, robust to spacing/concatenation differences that
+    # token-based measures miss, e.g. "shreebalaji" vs "shree balaji", "xyz.com" vs "xyz com".
+    "name_trigram_jaccard",
+    # Distinguishes "address missing on one/both sides" from "address present but different" -
+    # the model previously saw both cases as low addr_ratio/addr_token_sort with no way to tell them apart.
+    "address_missing",
 ]
 
 
@@ -48,10 +58,53 @@ def build_entity_store(
     return database_path
 
 
+def _normalize_num(token: str) -> str:
+    """Strip leading zeros / stray punctuation so "0345", "#345" and "345" all
+    compare equal. Falls back to the raw token if it isn't purely numeric."""
+    digits = "".join(ch for ch in str(token) if ch.isdigit())
+    if not digits:
+        return str(token)
+    try:
+        return str(int(digits))
+    except ValueError:
+        return str(token)
+
+
 def _jaccard(left, right) -> float:
-    left_set, right_set = set(left or []), set(right or [])
+    left_set = {_normalize_num(x) for x in (left or [])}
+    right_set = {_normalize_num(x) for x in (right or [])}
     union = left_set | right_set
     return len(left_set & right_set) / len(union) if union else 0.0
+
+
+def _overlap_coefficient(left_text: str, right_text: str) -> float:
+    """Containment score on whitespace tokens: |A∩B| / min(|A|,|B|).
+
+    Plain Jaccard punishes a short, correct name/address for being short:
+    "ABC Technologies" vs "ABC Technologies Pvt Ltd Mumbai" scores badly on
+    Jaccard but should score near 1.0 here, since every token on the shorter
+    side is present in the longer one.
+    """
+    left_set, right_set = set(left_text.split()), set(right_text.split())
+    if not left_set or not right_set:
+        return 0.0
+    smaller = min(len(left_set), len(right_set))
+    return len(left_set & right_set) / smaller if smaller else 0.0
+
+
+def _trigrams(text: str) -> set[str]:
+    """Character trigrams over the space-stripped string, so a fused/split
+    spelling ("shreebalaji" vs "shree balaji") still lines up character-for-
+    character instead of being split into different tokens first."""
+    stripped = (text or "").replace(" ", "")
+    return {stripped[i:i + 3] for i in range(len(stripped) - 2)}
+
+
+def _trigram_jaccard(left_text: str, right_text: str) -> float:
+    left_grams, right_grams = _trigrams(left_text), _trigrams(right_text)
+    if not left_grams or not right_grams:
+        return 0.0
+    return len(left_grams & right_grams) / len(left_grams | right_grams)
 
 
 def _exact_embedding_cosine(row: dict, embeddings: dict[str, np.ndarray] | None) -> float:
@@ -96,6 +149,10 @@ def _feature_frame(joined: pl.DataFrame, embeddings: dict[str, np.ndarray] | Non
         values["country_match"].append(int(bool(row["left_country"]) and row["left_country"] == row["right_country"]))
         values["legal_match"].append(int(bool(row["left_legal"]) and row["left_legal"] == row["right_legal"]))
         values["embedding_cosine"].append(_exact_embedding_cosine(row, embeddings))
+        values["name_overlap_coef"].append(_overlap_coefficient(left_name, right_name))
+        values["addr_overlap_coef"].append(_overlap_coefficient(left_address, right_address))
+        values["name_trigram_jaccard"].append(_trigram_jaccard(left_name, right_name))
+        values["address_missing"].append(int(not row["left_address"] or not row["right_address"]))
     return pl.DataFrame({**identifiers, **values})
 
 
