@@ -12,3 +12,4 @@ requirements-cluster-constraints.txt
 *.duckdb
 test.py
 __pycache__/
+analysis/
